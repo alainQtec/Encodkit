@@ -9,7 +9,7 @@ class Encodkit {
     Encodkit() {}
     static [byte[]] n4b() { return [byte[]]([byte]([Encodkit]::n -shr 24), [byte]([Encodkit]::n -shl 16), [byte]([Encodkit]::n -shl 8), [byte][Encodkit]::n) }
     static [byte[]] n5b() {
-        $k = [byte]::New(5); for ($i = 0; $i -lt 5; $i++) {
+        $k = [byte[]]::New(5); for ($i = 0; $i -lt 5; $i++) {
             $k[4 - $i] = [byte][Encodkit]::b85[[int][byte]([Encodkit]::n % 85)]
             [Encodkit]::n /= 85
         }
@@ -18,12 +18,13 @@ class Encodkit {
     static [void] Encode() {}
     static [void] Decode([string]$EncodedString, [string]$OutFile) {}
 
-    static [string[]] Compress([string]$filename, [string]$OutFile, [bool]$bLines, [bool]$bPrefix) {
+    static [string] Compress([string]$text) { return [Encodkit]::Compress($text, $false, $false) }
+    static [string] Compress([string]$text, [bool]$bLines, [bool]$bPrefix) {
         [int]$l = 0; [int]$p = 0; $ms = [System.IO.MemoryStream]::new(); [Encodkit]::n = 0;
         for ($i = 0; $i -lt ([Encodkit]::b85.Count); $i++) { [Encodkit]::b85[$i] = [byte][Encodkit]::a85[$i] }
         $SOL = [byte[]](0x3A, 0x3A); $EOL = [byte[]](0xA);
-        $fileBytes = [IO.File]::ReadAllBytes([IO.Path]::GetFullPath($filename))
-        foreach ($byte in $fileBytes) {
+        $textBytes = [System.Text.Encoding]::UTF8.GetBytes($text)
+        foreach ($byte in $textBytes) {
             if ($bLines) {
                 if ($bPrefix -and $l -eq 1) { [void]$ms.Write($SOL, 0, 2) }
                 if ($l -eq 101) { [void]$ms.Write($EOL, 0, 1); $l = 0 }
@@ -48,18 +49,25 @@ class Encodkit {
             [Encodkit]::n = [Encodkit]::n -bor 0
             [void]$ms.Write([Encodkit]::n5b(), 0, $p + 1)
         }
-        $marker = [System.Text.Encoding]::UTF8.GetBytes("`r`n" + $filename + ": " + $filename + "`r`n")
+        $c = [System.Text.Encoding]::UTF8.GetString($ms.ToArray()); $ms.SetLength(0);
+        return $c
+    }
+    static [string[]] Compress([IO.FileInfo]$file, [string]$OutFile, [bool]$bLines, [bool]$bPrefix) {
+        if (!$file.Exists) { throw [System.IO.FileNotFoundException]::New($file.FullName) }; $filename = $file.BaseName
+        $c = [Encodkit]::Compress([IO.File]::ReadAllText($file.FullName), $bLines, $bPrefix)
+        $b = [System.Text.Encoding]::UTF8.GetBytes($c); [Encodkit]::n = 0;
+        $m = [System.Text.Encoding]::UTF8.GetBytes("`r`n" + $filename + ": " + $filename + "`r`n")
         $fs = [System.IO.FileStream]::new($OutFile, [System.IO.FileMode]::Append)
-        $fs.Write($marker, 0, $marker.Length); $fs.Write($ms.ToArray(), 0, [int]$ms.Length); $ms.SetLength(0);
+        $fs.Write($m, 0, $m.Length); $fs.Write($b, 0, [int]$b.Length);
         return [IO.File]::ReadAllLines($OutFile, [System.Text.Encoding]::UTF8)
     }
-    static [string[]] Decompress([string]$Compresed, [string]$OutFile) {
+    static [string[]] Decompress([string]$Compresed) {
         [Encodkit]::b85 = [byte[]]::New(255); $ms = [System.IO.MemoryStream]::New(); [Encodkit]::n = 0;
         for ($i = 0; $i -lt 85; $i++) {
             [Encodkit]::b85[[int][Encodkit]::a85[$i]] = $i
         }
         $k = $false; $p = 0
-        foreach ($c in $Compresed) {
+        foreach ($c in $Compresed.ToCharArray()) {
             $k = $c -notin [char[]](0, 8, 9, 10, 13, 32, 58, 49824)
             if ($k) {
                 [Encodkit]::n += [Encodkit]::b85[[int][byte]$c] * ([Encodkit]::p85[$p++])
@@ -72,11 +80,16 @@ class Encodkit {
             for ($i = 0; $i -lt 5 - $p; $i++) { [Encodkit]::n += 84 * [Encodkit]::p85[$p + $i] }
             $ms.Write([Encodkit]::n4b(), 0, $p - 1)
         }
-        [IO.File]::WriteAllBytes($OutFile, $ms.ToArray()); $ms.SetLength(0);
+        $d = [System.Text.Encoding]::UTF8.GetString($ms.ToArray()); $ms.SetLength(0);
+        return $d
+    }
+    static [string[]] Decompress([string]$Compresed, [string]$OutFile) {
+        [IO.File]::WriteAllBytes($OutFile, [System.Text.Encoding]::UTF8.GetBytes([Encodkit]::Decompress($Compresed)));
         return [IO.File]::ReadAllLines($OutFile)
     }
 }
 #endregion Classes
+<#
 $Private = Get-ChildItem ([IO.Path]::Combine($PSScriptRoot, 'Private')) -Filter "*.ps1" -ErrorAction SilentlyContinue
 $Public = Get-ChildItem ([IO.Path]::Combine($PSScriptRoot, 'Public')) -Filter "*.ps1" -ErrorAction SilentlyContinue
 # Load dependencies
@@ -102,3 +115,4 @@ foreach ($Import in ($Public + $Private)) {
 # Export Public Functions
 $Public | ForEach-Object { Export-ModuleMember -Function $_.BaseName }
 #Export-ModuleMember -Alias @('<Aliases>')
+#>
