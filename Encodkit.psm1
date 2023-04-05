@@ -1,5 +1,17 @@
 #!/usr/bin/env pwsh
 #region    Classes
+class Encodkit {
+    Encodkit() {}
+    [void] Encode() {}
+    [void] Decode([string]$EncodedString, [string]$OutFile) {}
+
+    [string] Decompress() {
+        return ''
+    }
+    [string] Compress() {
+        return ''
+    }
+}
 #endregion Classes
 $Private = Get-ChildItem ([IO.Path]::Combine($PSScriptRoot, 'Private')) -Filter "*.ps1" -ErrorAction SilentlyContinue
 $Public = Get-ChildItem ([IO.Path]::Combine($PSScriptRoot, 'Public')) -Filter "*.ps1" -ErrorAction SilentlyContinue
