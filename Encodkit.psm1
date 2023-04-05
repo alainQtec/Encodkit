@@ -7,7 +7,10 @@ class Encodkit {
     static [string] $a85 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$&()+,-./;=?@[]^_{|}~";
 
     Encodkit() {}
-    static [byte[]] n4b() { return [byte[]]([byte]([Encodkit]::n -shr 24), [byte]([Encodkit]::n -shl 16), [byte]([Encodkit]::n -shl 8), [byte][Encodkit]::n) }
+    static [byte[]] n4b() {
+        $_n = [Encodkit]::n
+        return [byte[]](($_n -shr 24), ($_n -shl 16), ($_n -shl 8), $_n)
+    }
     static [byte[]] n5b() {
         $k = [byte[]]::New(5); for ($i = 0; $i -lt 5; $i++) {
             $k[4 - $i] = [byte][Encodkit]::b85[[int][byte]([Encodkit]::n % 85)]
