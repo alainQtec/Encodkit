@@ -40,25 +40,24 @@ class Base85 {
     hidden [ValidateNotNull()] [byte[]] $_decodedBlock = [byte[]]::New(4);
     hidden [ValidateNotNull()] [uint] $_tuple = 0;
     hidden [ValidateNotNull()] [int] $_linePos = 0;
-    static hidden [System.Text.StringBuilder] $_sb = [System.Text.StringBuilder]::new();
     hidden [ValidateNotNullOrEmpty()] [uint[]] $pow85 = ((85 * 85 * 85 * 85), (85 * 85 * 85), (85 * 85), 85, 1);
 
     Base85() {}
 
     [string] Encode([byte[]]$ba) {
-        [Base85]::_sb = [System.Text.StringBuilder]::new([int]($ba.Length * ($this._encodedBlock.Length / $this._decodedBlock.Length)))
+        $sb = [System.Text.StringBuilder]::new([int]($ba.Length * ($this._encodedBlock.Length / $this._decodedBlock.Length)))
         $this._linePos = 0;
         if ($this.EnforceMarks) {
-            $this.AppendString($this.PrefixMark)
+            $sb = $this.AppendString($this.PrefixMark, $sb)
         }
         [int]$count = 0; $this._tuple = 0;
         foreach ($byte in $ba) {
             if ($count -ge ($this._decodedBlock.Length - 1)) {
                 $this._tuple = $this._tuple -bor $byte
                 if ($this._tuple -eq 0) {
-                    $this.AppendChar([char]'z')
+                    $sb = $this.AppendChar([char]'z', $sb)
                 } else {
-                    $this.EncodeBlock()
+                    $sb = $this.EncodeBlock($sb)
                 } ; $this._tuple = 0; $count = 0;
             } else {
                 $this._tuple = $this._tuple -bor [uint]($byte -shl (24 - ($count * 8)))
@@ -67,12 +66,12 @@ class Base85 {
         }
         # Check for left over bytes at the end.
         if ($count -gt 0) {
-            $this.EncodeBlock(($count + 1))
+            $sb = $this.EncodeBlock(($count + 1), $sb)
         }
         if ($this.EnforceMarks) {
-            $this.AppendString($this.SuffixMark)
+            $sb = $this.AppendString($this.SuffixMark, $sb)
         }
-        $encodedString = [Base85]::_sb.ToString(); [void][Base85]::_sb.Clear()
+        $encodedString = $sb.ToString(); [void]$sb.Clear()
         return $encodedString
     }
     [byte[]] Decode([string]$text) {
@@ -139,23 +138,27 @@ class Base85 {
         $ms.SetLength(0); $ms.Close();
         return $decoded
     }
-    hidden [void] AppendChar([char]$c) {
-        [void][Base85]::_sb.Append($c); $this._linePos++
+    hidden [System.Text.StringBuilder] AppendChar([char]$c, [System.Text.StringBuilder]$sb) {
+        [void]$sb.Append($c); $this._linePos++
         if ($this.LineLength -gt 0 -and ($this._linePos -ge $this.LineLength)) {
-            $this._linePos = 0; [void][Base85]::_sb.Append("`n");
+            $this._linePos = 0; [void]$sb.Append("`n");
         }
+        return $sb
     }
-    hidden [void] AppendString([string]$s) {
+    hidden [System.Text.StringBuilder] AppendString([string]$s, [System.Text.StringBuilder]$sb) {
         if ($this.LineLength -gt 0 -and ($this._linePos + $s.Length) -gt $this.LineLength) {
-            $this._linePos = 0; [Base85]::_sb.Append("`n");
+            $this._linePos = 0; $sb.Append("`n");
         } else {
             $this._linePos += $s.Length
         }
-        [void][Base85]::_sb.Append($s)
+        [void]$sb.Append($s)
+        return $sb
     }
-    hidden [void] EncodeBlock () { $this.EncodeBlock($this._encodedBlock.Count) }
-    hidden [void] EncodeBlock([int]$count) {
-        if ($null -eq [Base85]::_sb) { throw 'StringBuilder was Not FOUND!' }
+    hidden [System.Text.StringBuilder] EncodeBlock([System.Text.StringBuilder]$sb) {
+        return $this.EncodeBlock($this._encodedBlock.Count, $sb)
+    }
+    hidden [System.Text.StringBuilder] EncodeBlock([int]$count, [System.Text.StringBuilder]$sb) {
+        if ($null -eq $sb) { throw 'StringBuilder was Not FOUND!' }
         for ($i = $this._encodedBlock.Length - 1; $i -ge 0; $i--) {
             $this._encodedBlock[$i] = [byte](($this._tuple % 85) + $this._asciiOffset)
             $this._tuple /= 85;
@@ -163,13 +166,10 @@ class Base85 {
         for ($i = 0; $i -lt $Count; $i++) {
             $c = [char]$this._encodedBlock[$i]; $this.AppendChar($c)
         }
+        return $sb
     }
     hidden [void] DecodeBlock() { $this.DecodeBlock($this._decodedBlock.Length) }
-    hidden [void] DecodeBlock([int]$count) {
-        for ($i = 0; $i -lt $count; $i++) {
-            $this._decodedBlock[$i] = [byte]($this._tuple -shr 24 - ($i * 8));
-        }
-    }
+    hidden [void] DecodeBlock([int]$count) { for ($i = 0; $i -lt $count; $i++) { $this._decodedBlock[$i] = [byte]($this._tuple -shr 24 - ($i * 8)) } }
 }
 class Base16 {
     Base16() {}
