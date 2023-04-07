@@ -40,9 +40,10 @@ class Base85 {
     hidden [ValidateNotNull()] [byte[]] $_decodedBlock = [byte[]]::New(4);
     hidden [ValidateNotNull()] [uint] $_tuple = 0;
     hidden [ValidateNotNull()] [int] $_linePos = 0;
-    hidden [ValidateNotNullOrEmpty()] [uint[]] $pow85 = ((85 * 85 * 85 * 85), (85 * 85 * 85), (85 * 85), 85, 1);
 
-    Base85() {}
+    Base85() {
+        $this.PsObject.properties.add([psscriptproperty]::new('pow85', [scriptblock]::Create({ return [uint[]]((85 * 85 * 85 * 85), (85 * 85 * 85), (85 * 85), 85, 1) })))
+    }
 
     [string] Encode([byte[]]$ba) {
         $sb = [System.Text.StringBuilder]::new([int]($ba.Length * ($this._encodedBlock.Length / $this._decodedBlock.Length)))
@@ -164,7 +165,7 @@ class Base85 {
             $this._tuple /= 85;
         }
         for ($i = 0; $i -lt $Count; $i++) {
-            $c = [char]$this._encodedBlock[$i]; $this.AppendChar($c)
+            $c = [char]$this._encodedBlock[$i]; $sb = $this.AppendChar($c, $sb)
         }
         return $sb
     }
