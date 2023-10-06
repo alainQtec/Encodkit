@@ -26,3 +26,7 @@ This may not be practical for very large files, as it may result in a significan
 may consume more memory. In these cases, it may be more efficient to use a different approach,
 
 such as streaming the file in small chunks and encoding each chunk separately.
+
+## **License**
+
+This module is licensed under the MIT [License](https://alainQtec.MIT-license.org).
