@@ -1,6 +1,12 @@
 #!/usr/bin/env pwsh
 #region    Classes
 
+enum EncodingName {
+    Base85
+    Base58
+    Base16
+}
+
 # Binary-Coded Decimal (BCD) Encoding:
 # This algorithm represents decimal digits with four bits, with each decimal digit encoded in its own four-bit code.
 class BCD {
@@ -22,160 +28,184 @@ class Huffman {
 # and the transition from low to high represents a binary 0.
 class Manchester {
 }
+class EncodingBase : System.Text.ASCIIEncoding {
+    EncodingBase() {}
+    static [byte[]] GetBytes([string] $text) {
+        return [EncodingBase]::new().GetBytes($text)
+    }
+    static [string] GetString([byte[]]$bytes) {
+        return [EncodingBase]::new().GetString($bytes)
+    }
+    static [char[]] GetChars([byte[]]$bytes) {
+        return [EncodingBase]::new().GetChars($bytes)
+    }
+}
+#region    Base85
 <#
 .SYNOPSIS
     Base85 encoding
 .DESCRIPTION
     A binary-to-text encoding scheme that uses 85 printable ASCII characters to represent binary data
-.NOTES
-    Not Workin9!!!
+.EXAMPLE
+    $b = [System.Text.Encoding]::UTF8.GetBytes("Hello world")
+    [base85]::Encode($b)
+    [System.Text.Encoding]::UTF8.GetString([base85]::Decode("87cURD]j7BEbo7"))
 #>
-class Base85 {
-    [ValidateNotNullOrEmpty()] [string] $PrefixMark = "<~"; # Prefix mark that identifies an encoded ASCII85 string, traditionally '<~'
-    [ValidateNotNullOrEmpty()] [string] $SuffixMark = "~>"; # Suffix mark that identifies an encoded ASCII85 string, traditionally '~>'
-    [ValidateNotNull()] [int] $LineLength = 75; # Maximum line length for encoded ASCII85 string;
-    [ValidateNotNull()] [bool] $EnforceMarks = $true; # Add the Prefix and Suffix marks when encoding, and enforce their presence for decoding
-    hidden [ValidateNotNull()] [int] $_asciiOffset = 33;
-    hidden [ValidateNotNull()] [byte[]] $_encodedBlock = [byte[]]::New(5);
-    hidden [ValidateNotNull()] [byte[]] $_decodedBlock = [byte[]]::New(4);
-    hidden [ValidateNotNull()] [uint] $_tuple = 0;
-    hidden [ValidateNotNull()] [int] $_linePos = 0;
+class Base85 : EncodingBase {
+    static [String] $NON_A85_Pattern = "[^\x21-\x75]"
 
-    Base85() {
-        $this.PsObject.properties.add([psscriptproperty]::new('pow85', [scriptblock]::Create({ return [uint[]]((85 * 85 * 85 * 85), (85 * 85 * 85), (85 * 85), 85, 1) })))
+    Base85() {}
+    static [string] Encode([string]$text) {
+        return [Base85]::Encode([Base85]::new().GetBytes($text), $false)
     }
-
-    [string] Encode([byte[]]$ba) {
-        $sb = [System.Text.StringBuilder]::new([int]($ba.Length * ($this._encodedBlock.Length / $this._decodedBlock.Length)))
-        $this._linePos = 0;
-        if ($this.EnforceMarks) {
-            $sb = $this.AppendString($this.PrefixMark, $sb)
+    static [string] Encode([byte[]]$Bytes) {
+        return [Base85]::Encode($Bytes, $false)
+    }
+    static [string] Encode([byte[]]$Bytes, [bool]$Format) {
+        # Using Format means we'll add "<~" Prefix and "~>" Suffix marks to output text
+        [System.IO.Stream]$InputStream = New-Object -TypeName System.IO.MemoryStream(,$Bytes)
+        [System.Object]$Timer = [System.Diagnostics.Stopwatch]::StartNew()
+        [System.Object]$BinaryReader = New-Object -TypeName System.IO.BinaryReader($InputStream)
+        [System.Object]$Ascii85Output = New-Object -TypeName System.Text.StringBuilder
+        if ($Format) {
+            [void]$Ascii85Output.Append("<~")
+            [System.UInt16]$LineLen = 2
         }
-        [int]$count = 0; $this._tuple = 0;
-        foreach ($byte in $ba) {
-            if ($count -ge ($this._decodedBlock.Length - 1)) {
-                $this._tuple = $this._tuple -bor $byte
-                if ($this._tuple -eq 0) {
-                    $sb = $this.AppendChar([char]'z', $sb)
+        $EncodedString = [string]::Empty
+        Try {
+            Write-Verbose "[base85] Encoding started at $([Datetime]::Now.Add($timer.Elapsed).ToString()) ..."
+            While ([System.Byte[]]$BytesRead = $BinaryReader.ReadBytes(4)) {
+                [System.UInt16]$ByteLength = $BytesRead.Length
+                if ($ByteLength -lt 4) {
+                    [System.Byte[]]$WorkingBytes = ,0x00 * 4
+                    [System.Buffer]::BlockCopy($BytesRead,0,$WorkingBytes,0,$ByteLength)
+                    [System.Array]::Resize([ref]$BytesRead,4)
+                    [System.Buffer]::BlockCopy($WorkingBytes,0,$BytesRead,0,4)
+                }
+                if ([BitConverter]::IsLittleEndian) {
+                    [Array]::Reverse($BytesRead)
+                }
+                [System.Char[]]$A85Chars = ,0x00 * 5
+                [System.UInt32]$Sum = [BitConverter]::ToUInt32($BytesRead,0)
+                [System.UInt16]$ByteLen = [Math]::Ceiling(($ByteLength / 4) * 5)
+                if ($ByteLength -eq 4 -And $Sum -eq 0) {
+                    [System.Char[]]$A85Chunk = "z"
                 } else {
-                    $sb = $this.EncodeBlock($sb)
-                } ; $this._tuple = 0; $count = 0;
-            } else {
-                $this._tuple = $this._tuple -bor [uint]($byte -shl (24 - ($count * 8)))
-                $count++
-            }
-        }
-        # Check for left over bytes at the end.
-        if ($count -gt 0) {
-            $sb = $this.EncodeBlock(($count + 1), $sb)
-        }
-        if ($this.EnforceMarks) {
-            $sb = $this.AppendString($this.SuffixMark, $sb)
-        }
-        $encodedString = $sb.ToString(); [void]$sb.Clear()
-        return $encodedString
-    }
-    [byte[]] Decode([string]$text) {
-        if ($this.EnforceMarks) {
-            if (!$text.StartsWith($this.PrefixMark) -or !$text.EndsWith($this.SuffixMark)) {
-                throw [System.IO.InvalidDataException]::New("Encoded data should begin with '" + $this.PrefixMark + "' and end with '" + $this.SuffixMark + "'")
-            }
-        }
-        # strip prefix and suffix if present
-        if ($text.StartsWith($this.PrefixMark)) {
-            $text = $text.Substring($this.PrefixMark.Length)
-        }
-        if ($text.EndsWith($this.SuffixMark)) {
-            $text = $text.Substring(0, $text.Length - ($this.SuffixMark.Length))
-        }
-        $ms = [System.IO.MemoryStream]::New();
-        [int] $count = 0;
-        [bool] $processChar = $false;
-        foreach ($c in $text.ToCharArray()) {
-            switch ($true) {
-                ($c -eq [char]'z') {
-                    if ($count -ne 0) { throw [Exception]::new("The character 'z' is invalid inside an ASCII85 block.") }
-                    $this._decodedBlock[0] = 0;
-                    $this._decodedBlock[1] = 0;
-                    $this._decodedBlock[2] = 0;
-                    $this._decodedBlock[3] = 0;
-                    $ms.Write($this._decodedBlock, 0, $this._decodedBlock.Length);
-                    $processChar = $false;
-                    break;
+                    [System.Char[]]$A85Chunk = ,0x00 * $ByteLen
+                    $A85Chars[0] = [Base85]::GetChars([Math]::Floor(($Sum / [Math]::Pow(85,4)) % 85) + 33)[0]
+                    $A85Chars[1] = [Base85]::GetChars([Math]::Floor(($Sum / [Math]::Pow(85,3)) % 85) + 33)[0]
+                    $A85Chars[2] = [Base85]::GetChars([Math]::Floor(($Sum / [Math]::Pow(85,2)) % 85) + 33)[0]
+                    $A85Chars[3] = [Base85]::GetChars([Math]::Floor(($Sum / 85) % 85) + 33)[0]
+                    $A85Chars[4] = [Base85]::GetChars([Math]::Floor($Sum % 85) + 33)[0]
+                    [System.Array]::Copy($A85Chars,$A85Chunk,$ByteLen)
                 }
-                ($c -in [char[]](0, 8, 9, 10, 13, 32, 58, 49824)) {
-                    $processChar = $false
-                    break
-                }
-                Default {
-                    if ($c -lt '!' -or $c -gt 'u') {
-                        throw [System.InvalidOperationException]::new("Base85 only allows characters '!' to 'u'.")
+                forEach ($A85Char in $A85Chunk) {
+                    [void]$Ascii85Output.Append($A85Char)
+                    if (!$Format) {
+                        if ($LineLen -eq 64) {
+                            [void]$Ascii85Output.Append("`r`n")
+                            $LineLen = 0
+                        } else {
+                            $LineLen++
+                        }
                     }
-                    $processChar = $true;
-                    break
                 }
             }
-            if ($processChar) {
-                $this._tuple += [uint]($c - $this._asciiOffset) * $this.pow85[$count]; $count++
-                if ($count -eq $this._encodedBlock.Length) {
-                    $this.DecodeBlock();
-                    $ms.Write($this._decodedBlock, 0, $this._decodedBlock.Length);
-                    $this._tuple = 0; $count = 0;
+            if ($Format) {
+                if ($LineLen -le 62) {
+                    [void]$Ascii85Output.Append("~>")
+                } else {
+                    [void]$Ascii85Output.Append("~`r`n>")
                 }
             }
+            $EncodedString = $Ascii85Output.ToString()
+        } catch {
+            Write-Error "Exception: $($_.Exception.Message)"
+            break;
+        } finally {
+            $BinaryReader.Close()
+            $BinaryReader.Dispose()
+            $InputStream.Close()
+            $InputStream.Dispose()
+            $Timer.Stop()
+            [String]$TimeLapse = "[base85] Encoding completed in $($Timer.Elapsed.Hours) hours, $($Timer.Elapsed.Minutes) minutes, $($Timer.Elapsed.Seconds) seconds, $($Timer.Elapsed.Milliseconds) milliseconds"
+            Write-Verbose $TimeLapse
         }
-        # Check for left over bytes at the end.
-        if ($count -ne 0) {
-            if ($count -eq 1) {
-                throw [System.Exception]::New("The last block of ASCII85 data cannot be a single byte.")
-            }
-            $count--; $this._tuple += $this.pow85[$count];
-            $this.DecodeBlock($count);
-            for ($i = 0; $i -lt $Count; $i++) {
-                $ms.WriteByte($this._decodedBlock[$i])
-            }
+        return $EncodedString
+    }
+    static [byte[]] Decode([string]$text) {
+        $text = $text.Replace(" ","").Replace("`r`n","").Replace("`n","")
+        $decoded = $null; if ($text.StartsWith("<~") -or $text.EndsWith("~>")) {
+            $text = $text.Replace("<~","").Replace("~>","")
         }
-        $decoded = $ms.ToArray()
-        $ms.SetLength(0); $ms.Close();
+        if ($text -match $([Base85]::NON_A85_Pattern)) {
+            Throw "Invalid Ascii85 data detected in input stream."
+        }
+        [System.Object]$InputStream = New-Object -TypeName System.IO.MemoryStream([System.Text.Encoding]::ASCII.GetBytes($text),0,$text.Length)
+        [System.Object]$BinaryReader = New-Object -TypeName System.IO.BinaryReader($InputStream)
+        [System.Object]$OutputStream = New-Object -TypeName System.IO.MemoryStream
+        [System.Object]$BinaryWriter = New-Object -TypeName System.IO.BinaryWriter($OutputStream)
+        [System.Object]$Timer = [System.Diagnostics.Stopwatch]::StartNew()
+        Try {
+            Write-Verbose "[base85] Decoding started at $([Datetime]::Now.Add($timer.Elapsed).ToString()) ..."
+            While ([System.Byte[]]$BytesRead = $BinaryReader.ReadBytes(5)) {
+                [System.UInt16]$ByteLength = $BytesRead.Length
+                if ($ByteLength -lt 5) {
+                    [System.Byte[]]$WorkingBytes = ,0x75 * 5
+                    [System.Buffer]::BlockCopy($BytesRead,0,$WorkingBytes,0,$ByteLength)
+                    [System.Array]::Resize([ref]$BytesRead,5)
+                    [System.Buffer]::BlockCopy($WorkingBytes,0,$BytesRead,0,5)
+                }
+                [System.UInt16]$ByteLen = [Math]::Floor(($ByteLength * 4) / 5)
+                [System.Byte[]]$BinChunk = ,0x00 * $ByteLen
+                if ($BytesRead[0] -eq 0x7A) {
+                    $BinaryWriter.Write($BinChunk)
+                    [bool]$IsAtEnd = ($BinaryReader.BaseStream.Length -eq $BinaryReader.BaseStream.Position)
+                    if (!$IsAtEnd) {
+                        $BinaryReader.BaseStream.Position = $BinaryReader.BaseStream.Position - 4
+                        Continue
+                    }
+                } else {
+                    [System.UInt32]$Sum = 0
+                    $Sum += ($BytesRead[0] - 33) * [Math]::Pow(85,4)
+                    $Sum += ($BytesRead[1] - 33) * [Math]::Pow(85,3)
+                    $Sum += ($BytesRead[2] - 33) * [Math]::Pow(85,2)
+                    $Sum += ($BytesRead[3] - 33) * 85
+                    $Sum += ($BytesRead[4] - 33)
+                    [System.Byte[]]$A85Bytes = [System.BitConverter]::GetBytes($Sum)
+                    if ([BitConverter]::IsLittleEndian) {
+                        [Array]::Reverse($A85Bytes)
+                    }
+                    [System.Buffer]::BlockCopy($A85Bytes,0,$BinChunk,0,$ByteLen)
+                    $BinaryWriter.Write($BinChunk)
+                }
+            }
+            $decoded = $OutputStream.ToArray()
+        } catch {
+            Write-Error "Exception: $($_.Exception.Message)"
+            break
+        } finally {
+            $BinaryReader.Close()
+            $BinaryReader.Dispose()
+            $BinaryWriter.Close()
+            $BinaryWriter.Dispose()
+            $InputStream.Close()
+            $InputStream.Dispose()
+            $OutputStream.Close()
+            $OutputStream.Dispose()
+            $Timer.Stop()
+            [String]$TimeLapse = "[base85] Decoding completed after $($Timer.Elapsed.Hours) hours, $($Timer.Elapsed.Minutes) minutes, $($Timer.Elapsed.Seconds) seconds, $($Timer.Elapsed.Milliseconds) milliseconds"
+            Write-Verbose $TimeLapse
+        }
         return $decoded
     }
-    hidden [System.Text.StringBuilder] AppendChar([char]$c, [System.Text.StringBuilder]$sb) {
-        [void]$sb.Append($c); $this._linePos++
-        if ($this.LineLength -gt 0 -and ($this._linePos -ge $this.LineLength)) {
-            $this._linePos = 0; [void]$sb.Append("`n");
-        }
-        return $sb
-    }
-    hidden [System.Text.StringBuilder] AppendString([string]$s, [System.Text.StringBuilder]$sb) {
-        if ($this.LineLength -gt 0 -and ($this._linePos + $s.Length) -gt $this.LineLength) {
-            $this._linePos = 0; $sb.Append("`n");
-        } else {
-            $this._linePos += $s.Length
-        }
-        [void]$sb.Append($s)
-        return $sb
-    }
-    hidden [System.Text.StringBuilder] EncodeBlock([System.Text.StringBuilder]$sb) {
-        return $this.EncodeBlock($this._encodedBlock.Count, $sb)
-    }
-    hidden [System.Text.StringBuilder] EncodeBlock([int]$count, [System.Text.StringBuilder]$sb) {
-        if ($null -eq $sb) { throw 'StringBuilder was Not FOUND!' }
-        for ($i = $this._encodedBlock.Length - 1; $i -ge 0; $i--) {
-            $this._encodedBlock[$i] = [byte](($this._tuple % 85) + $this._asciiOffset)
-            $this._tuple /= 85;
-        }
-        for ($i = 0; $i -lt $Count; $i++) {
-            $c = [char]$this._encodedBlock[$i]; $sb = $this.AppendChar($c, $sb)
-        }
-        return $sb
-    }
-    hidden [void] DecodeBlock() { $this.DecodeBlock($this._decodedBlock.Length) }
-    hidden [void] DecodeBlock([int]$count) { for ($i = 0; $i -lt $count; $i++) { $this._decodedBlock[$i] = [byte]($this._tuple -shr 24 - ($i * 8)) } }
 }
-class Base16 {
+
+#endregion Base85
+class Base16 : EncodingBase {
     Base16() {}
 }
-class Base32 {
+class Base32 : EncodingBase {
     [int]$InByteSize = 8;
     [int]$OutByteSize = 5;
     [string]$Base32Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
@@ -187,27 +217,27 @@ class Base32 {
         } elseif ($bytes.Length -eq 0) {
             return [string]::Empty;
         }
-        $builder = [System.Text.StringBuilder]::New($bytes.Length * $this.InByteSize / $this.OutByteSize);
-        [int]$bytesPosition = 0;
+        # $builder = [System.Text.StringBuilder]::New($bytes.Length * $this.InByteSize / $this.OutByteSize);
+        # [int]$bytesPosition = 0;
         # Offset inside a single byte that points to (from left to right)
         # 0 - highest bit, 7 - lowest bit
-        [int]$bytesSubPosition = 0;
+        # [int]$bytesSubPosition = 0;
         # Byte to look up in the dictionary
-        [byte]$outputBase32Byte = 0;
+        # [byte]$outputBase32Byte = 0;
         # // The number of bits filled in the current output byte
-        [int]$outputBase32BytePosition = 0;
+        # [int]$outputBase32BytePosition = 0;
         # Iterate through input buffer until we reach past the end of it
-        while ($bytesPosition -lt $bytes.Length) {
-            # Calculate the number of bits we can extract out of current input byte to fill missing bits in the output byte
-            $bitsAvailableInByte = [System.Math]::Min($this.InByteSize - $bytesPosition, $this.OutByteSize - $outputBase32BytePosition);
-            # Make space in the output byte
-            # $outputBase32Byte <<= $bitsAvailableInByte;
-        }
+        # while ($bytesPosition -lt $bytes.Length) {
+        #     Calculate the number of bits we can extract out of current input byte to fill missing bits in the output byte
+        #     $bitsAvailableInByte = [System.Math]::Min($this.InByteSize - $bytesPosition, $this.OutByteSize - $outputBase32BytePosition);
+        #     Make space in the output byte
+        #     $outputBase32Byte <<= $bitsAvailableInByte;
+        # }
         return ' ....'
     }
 }
 
-class Base36 {
+class Base36 : EncodingBase {
     Base36() {
         $this.PsObject.properties.add([psscriptproperty]::new('alphabet', [scriptblock]::Create({ return "0123456789abcdefghijklmnopqrstuvwxyz" })))
     }
@@ -234,27 +264,24 @@ class Base36 {
     }
 }
 
-class Base58 {
+class Base58 : EncodingBase {
     Base58() {
-        $this.PsObject.properties.add([psscriptproperty]::new('B58bytes', [scriptblock]::Create({ return [System.Text.Encoding]::ASCII.GetBytes('123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz') })))
-    }
-    [string] Encode([string]$text) { return $this.Encode($text, $false) }
-    [string] Encode([string]$text, [bool]$Ashexidecimal) {
-        if ($Ashexidecimal) {
-            # only when string is hexidecimal
-            $binary_to_encode = [byte[]]::New($text.length / 2)
-            for ($i = 0; $i -lt $text.length; $i += 2) {
-                # todo: Fix / find another way to convert instead of static byte ToByte(string value, int fromBase)
-                $binary_to_encode[$i / 2] = [Convert]::ToByte([string]$text.SubString($i, 2), [int]16)
-            }
-        } else {
-            $binary_to_encode = [System.Text.Encoding]::ASCII.GetBytes($text)
+        if ($null -eq [Base58]::Bytes) {
+            [Base58]::PsObject.Properties.Add([psscriptproperty]::new('Bytes',
+                    { return [System.Text.Encoding]::ASCII.GetBytes('123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz') }
+                )
+            )
         }
-        $b58_size = 2 * ($binary_to_encode.length)
+    }
+    static [string] Encode([string]$text) {
+        return [Base58]::Encode([System.Text.Encoding]::ASCII.GetBytes($text))
+    }
+    static [string] Encode([byte[]]$ba) {
+        $b58_size = 2 * ($ba.length)
         $encoded = [byte[]]::New($b58_size)
-        $leading_zeroes = [regex]::New("^(0*)").Match([string]::Join([string]::Empty, $binary_to_encode)).Groups[1].Length
-        for ($i = 0; $i -lt $binary_to_encode.length; $i++) {
-            [System.Numerics.BigInteger]$dec_char = $binary_to_encode[$i]
+        $leading_zeroes = [regex]::New("^(0*)").Match([string]::Join([string]::Empty, $ba)).Groups[1].Length
+        for ($i = 0; $i -lt $ba.length; $i++) {
+            [System.Numerics.BigInteger]$dec_char = $ba[$i]
             for ($z = $b58_size; $z -gt 0; $z--) {
                 $dec_char = $dec_char + (256 * $encoded[($z - 1)])
                 $encoded[($z - 1)] = $dec_char % 58
@@ -263,7 +290,7 @@ class Base58 {
         }
         $mapped = [byte[]]::New($encoded.length)
         for ($i = 0; $i -lt $encoded.length; $i++) {
-            $mapped[$i] = $this.B58bytes[$encoded[$i]]
+            $mapped[$i] = [Base58]::Bytes[$encoded[$i]]
         }
         $encoded_binary_string = [System.Text.Encoding]::ASCII.GetString($mapped) # [Microsoft.PowerShell.Commands.ByteCollection]::new($mapped).Ascii
         if ([regex]::New("(1{$leading_zeroes}[^1].*)").Match($encoded_binary_string).Success) {
@@ -272,14 +299,13 @@ class Base58 {
             throw "error: " + $encoded_binary_string
         }
     }
-    [string] Decode([string]$text) { return $this.Decode($text, $false) }
-    [string] Decode([string]$text, [bool]$Ashexidecimal) {
+    static [byte[]] Decode([string]$text) {
         $leading_ones = [regex]::New("^(1*)").Match($text).Groups[1].Length
         $_bytes = [System.Text.Encoding]::ASCII.GetBytes($text)
         $mapped = [byte[]]::New($_bytes.length)
         for ($i = 0; $i -lt $_bytes.length; $i++) {
             $char = $_bytes[$i]
-            $mapped[$i] = $this.B58bytes.IndexOf($char)
+            $mapped[$i] = [Base58]::Bytes.IndexOf($char)
         }
         $decoded = [byte[]]::New($_bytes.length)
         for ($i = 0; $i -lt $mapped.length; $i++) {
@@ -295,56 +321,63 @@ class Base58 {
                 $decoded = $decoded[1..($decoded.Length - 1)]
             }
         )
-
-        if ($Ashexidecimal) {
-            $decoded_hex_string = [string]::Join([string]::Empty, @($decoded.ForEach({ $_.ToString('x2') })))
-            return $decoded_hex_string
-        } else {
-            $plaintext = [System.Text.Encoding]::ASCII.GetString($decoded)
-            return $plaintext
-        }
+        return $decoded
+        # hex_string can be: [string]::Join([string]::Empty, @($decoded.ForEach({ $_.ToString('x2') })))
     }
 }
 
 class EncodKit {
-    static [void] EncodeFile([string]$inFileName, [string]$outFileName) {
-        [EncodKit]::EncodeFile($inFileName, $outFileName, $false)
+    static [EncodingName] $DefaultEncoding = 'Base85'
+
+    static [void] EncodeFile([string]$FilePath, [bool]$obfuscate, [string]$OutFile) {
+        [EncodKit]::EncodeFile($FilePath, $obfuscate, $OutFile, [EncodKit]::DefaultEncoding)
     }
-    static [void] EncodeFile([string]$inFileName, [string]$outFileName, [bool]$doReverse) {
-        $encoder = [Base85]::New();
-        $encoder.EnforceMarks = $false;
-        $encoder.LineLength = 0;
+    static [void] EncodeFile([string]$FilePath, [bool]$obfuscate, [string]$OutFile, [EncodingName]$encoding) {
         [byte[]]$ba = $null;
-        [ValidateNotNullOrEmpty()][string]$inFileName = [IO.Path]::GetFullPath($inFileName)
-        $streamReader = [System.IO.FileStream]::new($inFileName, [System.IO.FileMode]::Open)
+        [ValidateNotNullOrEmpty()][string]$FilePath = [IO.Path]::GetFullPath($FilePath)
+        $streamReader = [System.IO.FileStream]::new($FilePath, [System.IO.FileMode]::Open)
         $ba = [byte[]]::New($streamReader.Length)
         [void]$streamReader.Read($ba, 0, [int]$streamReader.Length);
         [void]$streamReader.Close();
-        $encodedString = $encoder.Encode($ba);
-        # Write-Debug "File encoded in string of length '$($encodedString.Length)'" -Debug
+        $encodedString = $(switch ($encoding.ToString()) {
+                'Base85' { [Base85]::Encode($ba) }
+                'Base58' { [Base58]::Encode($ba) }
+                'Base32' {}
+                'Base16' {}
+                Default {
+                    [Base85]::Encode($ba)
+                }
+            }
+        )
         $encodedBytes = [System.Text.Encoding]::ASCII.GetBytes($encodedString);
-        if ($doReverse) { [array]::Reverse($encodedBytes) }
-        $streamWriter = [System.IO.FileStream]::new($outFileName, [System.IO.FileMode]::OpenOrCreate);
+        if ($obfuscate) { [array]::Reverse($encodedBytes) }
+        $streamWriter = [System.IO.FileStream]::new($OutFile, [System.IO.FileMode]::OpenOrCreate);
         [void]$streamWriter.Write($encodedBytes, 0, $encodedBytes.Length);
         [void]$streamWriter.Close()
     }
-    static [void] DecodeFile([string]$inFileName, [string]$outFileName) {
-        [EncodKit]::DecodeFile($inFileName, $outFileName, $false)
+    static [void] DecodeFile([string]$FilePath, [bool]$obfuscate, [string]$OutFile) {
+        [EncodKit]::DecodeFile($FilePath, $obfuscate, $OutFile, [EncodKit]::DefaultEncoding)
     }
-    static [void] DecodeFile([string]$inFileName, [string]$outFileName, [bool]$doReverse) {
-        $decoder = [Base85]::New()
-        $decoder.EnforceMarks = $false;
-        $decoder.LineLength = 0;
+    static [void] DecodeFile([string]$FilePath, [bool]$deObfuscate, [string]$OutFile, [EncodingName]$encoding) {
         [byte[]]$ba = $null;
-        [ValidateNotNullOrEmpty()][string]$inFileName = [IO.Path]::GetFullPath($inFileName);
-        $streamReader = [System.IO.FileStream]::new($inFileName, [System.IO.FileMode]::Open);
+        [ValidateNotNullOrEmpty()][string]$FilePath = [IO.Path]::GetFullPath($FilePath);
+        $streamReader = [System.IO.FileStream]::new($FilePath, [System.IO.FileMode]::Open);
         [void]$streamReader.Read($ba, 0, [int]$streamReader.Length);
         [void]$streamReader.Close();
-        if ($doReverse) { [array]::Reverse($ba) }
+        if ($deObfuscate) { [array]::Reverse($ba) }
         $encodedString = [System.Text.Encoding]::ASCII.GetString($ba)
-        $decodedString = $decoder.Decode($encodedString);
-        # Write-Debug "Decoded file length $($decodedString.Length)" -Debug;
-        $streamWriter = [System.IO.FileStream]::new($outFileName, [System.IO.FileMode]::OpenOrCreate);
+        $decodedString = [System.Text.Encoding]::ASCII.GetString($(switch ($encoding.ToString()) {
+                    'Base85' { [Base85]::Decode($encodedString) }
+                    'Base58' { [Base58]::Decode($encodedString) }
+                    'Base32' {}
+                    'Base16' {}
+                    Default {
+                        [Base85]::Decode($encodedString)
+                    }
+                }
+            )
+        )
+        $streamWriter = [System.IO.FileStream]::new($OutFile, [System.IO.FileMode]::OpenOrCreate);
         $streamWriter.Write($decodedString, 0, $decodedString.Length);
         $streamWriter.Close();
     }
