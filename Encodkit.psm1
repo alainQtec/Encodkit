@@ -201,7 +201,27 @@ class Base85 : EncodingBase {
 
 #endregion Base85
 class Base16 : EncodingBase {
-    Base16() {}
+    static [string] Encode([string]$text) {
+        return [Base16]::Encode([System.Text.Encoding]::ASCII.GetBytes($text))
+    }
+    static [string] Encode([byte[]]$ba) {
+        $encoded = $null; $Timer = [System.Diagnostics.Stopwatch]::StartNew();
+        Write-Verbose "[Base16] Encoding started at $([Datetime]::Now.Add($timer.Elapsed).ToString()) ..."
+        # 
+        # Base32 encode logic & code goes here
+        #
+        Write-Verbose "[Base16] Encoding completed in $($Timer.Elapsed.Hours) hours, $($Timer.Elapsed.Minutes) minutes, $($Timer.Elapsed.Seconds) seconds, $($Timer.Elapsed.Milliseconds) milliseconds"
+        return $encoded
+    }
+    static [byte[]] Decode([string]$text) {
+        $decoded = $null; $Timer = [System.Diagnostics.Stopwatch]::StartNew();
+        Write-Verbose "[Base16] Decoding started at $([Datetime]::Now.Add($timer.Elapsed).ToString()) ..."
+        # 
+        # Base32 decode logic & code goes here
+        #
+        Write-Verbose "[Base16] Decoding completed in $($Timer.Elapsed.Hours) hours, $($Timer.Elapsed.Minutes) minutes, $($Timer.Elapsed.Seconds) seconds, $($Timer.Elapsed.Milliseconds) milliseconds"
+        return $decoded
+    }
 }
 
 # .SYNOPSIS
@@ -211,34 +231,28 @@ class Base16 : EncodingBase {
 #     $d = [Base32]::GetString([Base32]::Decode($e))
 #     ($d -eq "Hello world again!") -should be $true
 class Base32 : EncodingBase {
-    [int]$InByteSize = 8;
-    [int]$OutByteSize = 5;
-    [string]$Base32Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-    Base32() {}
+    static [string] $alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 
-    [string] ToBase32String([byte[]]$bytes) {
-        if ($null -eq $bytes) {
-            return $null
-        } elseif ($bytes.Length -eq 0) {
-            return [string]::Empty;
-        }
-        # $builder = [System.Text.StringBuilder]::New($bytes.Length * $this.InByteSize / $this.OutByteSize);
-        # [int]$bytesPosition = 0;
-        # Offset inside a single byte that points to (from left to right)
-        # 0 - highest bit, 7 - lowest bit
-        # [int]$bytesSubPosition = 0;
-        # Byte to look up in the dictionary
-        # [byte]$outputBase32Byte = 0;
-        # // The number of bits filled in the current output byte
-        # [int]$outputBase32BytePosition = 0;
-        # Iterate through input buffer until we reach past the end of it
-        # while ($bytesPosition -lt $bytes.Length) {
-        #     Calculate the number of bits we can extract out of current input byte to fill missing bits in the output byte
-        #     $bitsAvailableInByte = [System.Math]::Min($this.InByteSize - $bytesPosition, $this.OutByteSize - $outputBase32BytePosition);
-        #     Make space in the output byte
-        #     $outputBase32Byte <<= $bitsAvailableInByte;
-        # }
-        return ' ....'
+    static [string] Encode([string]$text) {
+        return [Base32]::Encode([System.Text.Encoding]::ASCII.GetBytes($text))
+    }
+    static [string] Encode([byte[]]$ba) {
+        $encoded = $null; $Timer = [System.Diagnostics.Stopwatch]::StartNew();
+        Write-Verbose "[Base32] Encoding started at $([Datetime]::Now.Add($timer.Elapsed).ToString()) ..."
+        # 
+        # Base32 encode logic & code goes here
+        #
+        Write-Verbose "[Base32] Encoding completed in $($Timer.Elapsed.Hours) hours, $($Timer.Elapsed.Minutes) minutes, $($Timer.Elapsed.Seconds) seconds, $($Timer.Elapsed.Milliseconds) milliseconds"
+        return $encoded
+    }
+    static [byte[]] Decode([string]$text) {
+        $decoded = $null; $Timer = [System.Diagnostics.Stopwatch]::StartNew();
+        Write-Verbose "[Base32] Decoding started at $([Datetime]::Now.Add($timer.Elapsed).ToString()) ..."
+        # 
+        # Base32 decode logic & code goes here
+        #
+        Write-Verbose "[Base32] Decoding completed in $($Timer.Elapsed.Hours) hours, $($Timer.Elapsed.Minutes) minutes, $($Timer.Elapsed.Seconds) seconds, $($Timer.Elapsed.Milliseconds) milliseconds"
+        return $decoded
     }
 }
 
@@ -266,6 +280,28 @@ class Base36 : EncodingBase {
         }
         return $decNum
     }
+    static [string] Encode([string]$text) {
+        return [Base36]::Encode([System.Text.Encoding]::ASCII.GetBytes($text))
+    }
+    static [string] Encode([byte[]]$ba) {
+        $encoded = $null; $Timer = [System.Diagnostics.Stopwatch]::StartNew();
+        Write-Verbose "[Base36] Encoding started at $([Datetime]::Now.Add($timer.Elapsed).ToString()) ..."
+        # 
+        # base36 encode logic & code goes here
+        #
+        Write-Verbose "[Base36] Encoding completed in $($Timer.Elapsed.Hours) hours, $($Timer.Elapsed.Minutes) minutes, $($Timer.Elapsed.Seconds) seconds, $($Timer.Elapsed.Milliseconds) milliseconds"
+        return $encoded
+    }
+    static [byte[]] Decode([string]$text) {
+        $decoded = $null
+        $Timer = [System.Diagnostics.Stopwatch]::StartNew();
+        Write-Verbose "[Base36] Decoding started at $([Datetime]::Now.Add($timer.Elapsed).ToString()) ..."
+        # 
+        # base36 decode logic & code goes here
+        #
+        Write-Verbose "[Base36] Decoding completed in $($Timer.Elapsed.Hours) hours, $($Timer.Elapsed.Minutes) minutes, $($Timer.Elapsed.Seconds) seconds, $($Timer.Elapsed.Milliseconds) milliseconds"
+        return $decoded
+    }
 }
 
 
@@ -278,12 +314,14 @@ class Base36 : EncodingBase {
 class Base58 : EncodingBase {
     static [byte[]] $Bytes = [Base58]::GetBytes('123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz');
     static [string] Encode([string]$text) {
-        return [Base58]::Encode([System.Text.Encoding]::ASCII.GetBytes($text))
+        return [Base58]::Encode([Base58]::GetBytes($text))
     }
     static [string] Encode([byte[]]$ba) {
-        $b58_size = 2 * ($ba.length)
+        $encoded = $null; $b58_size = 2 * ($ba.length)
         $encoded = [byte[]]::New($b58_size)
         $leading_zeroes = [regex]::New("^(0*)").Match([string]::Join([string]::Empty, $ba)).Groups[1].Length
+        $Timer = [System.Diagnostics.Stopwatch]::StartNew();
+        Write-Verbose "[Base58] Encoding started at $([Datetime]::Now.Add($timer.Elapsed).ToString()) ..."
         for ($i = 0; $i -lt $ba.length; $i++) {
             [System.Numerics.BigInteger]$dec_char = $ba[$i]
             for ($z = $b58_size; $z -gt 0; $z--) {
@@ -296,17 +334,20 @@ class Base58 : EncodingBase {
         for ($i = 0; $i -lt $encoded.length; $i++) {
             $mapped[$i] = [Base58]::Bytes[$encoded[$i]]
         }
-        $encoded_binary_string = [System.Text.Encoding]::ASCII.GetString($mapped) # [Microsoft.PowerShell.Commands.ByteCollection]::new($mapped).Ascii
-        if ([regex]::New("(1{$leading_zeroes}[^1].*)").Match($encoded_binary_string).Success) {
-            return [regex]::New("(1{$leading_zeroes}[^1].*)").Match($encoded_binary_string).Groups[1].Value
+        $encoded = [Base58]::GetString($mapped)
+        Write-Verbose "[Base58] Encoding completed in $($Timer.Elapsed.Hours) hours, $($Timer.Elapsed.Minutes) minutes, $($Timer.Elapsed.Seconds) seconds, $($Timer.Elapsed.Milliseconds) milliseconds"
+        if ([regex]::New("(1{$leading_zeroes}[^1].*)").Match($encoded).Success) {
+            # $encoded equals [regex]::New("(1{$leading_zeroes}[^1].*)").Match($encoded).Groups[1].Value
+            return $encoded
         } else {
-            throw "error: " + $encoded_binary_string
+            throw "error: " + $encoded
         }
     }
     static [byte[]] Decode([string]$text) {
         $leading_ones = [regex]::New("^(1*)").Match($text).Groups[1].Length
-        $_bytes = [System.Text.Encoding]::ASCII.GetBytes($text)
-        $mapped = [byte[]]::New($_bytes.length)
+        $_bytes = [Base58]::GetBytes($text)
+        $mapped = [byte[]]::New($_bytes.length); $Timer = [System.Diagnostics.Stopwatch]::StartNew();
+        Write-Verbose "[Base58] Decoding started at $([Datetime]::Now.Add($timer.Elapsed).ToString()) ..."
         for ($i = 0; $i -lt $_bytes.length; $i++) {
             $char = $_bytes[$i]
             $mapped[$i] = [Base58]::Bytes.IndexOf($char)
@@ -325,8 +366,8 @@ class Base58 : EncodingBase {
                 $decoded = $decoded[1..($decoded.Length - 1)]
             }
         )
+        Write-Verbose "[Base58] Decoding completed in $($Timer.Elapsed.Hours) hours, $($Timer.Elapsed.Minutes) minutes, $($Timer.Elapsed.Seconds) seconds, $($Timer.Elapsed.Milliseconds) milliseconds"
         return $decoded
-        # hex_string can be: [string]::Join([string]::Empty, @($decoded.ForEach({ $_.ToString('x2') })))
     }
 }
 
@@ -338,6 +379,66 @@ class Base58 : EncodingBase {
 #     [EncodKit]::EncodeFile($file.FullName, $false, "file2.txt")
 #     [EncodKit]::DecodeFile("file2.txt")
 #     Now contents of file2.txt should be the same as those of file1.txt
+
+# .SYNOPSIS
+#     Unix to Unix aka UU Encoding
+# .DESCRIPTION
+#     The built-in .NET class: System.Net.Mail.Attachment 
+#     provides support for UUEncoding through the TransferEncoding property,
+#     which can be set to TransferEncoding.UUEncode
+# .EXAMPLE
+#     Test-MyTestFunction -Verbose
+#     Explanation of the function or its result. You can include multiple examples with additional .EXAMPLE lines
+class UnixtoUnix {
+    static [string] Encode([string]$text) {
+        return [UnixtoUnix]::Encode([System.Text.Encoding]::ASCII.GetBytes($text))
+    }
+    static [string] Encode([byte[]]$ba) {
+        $encoded = $null; $Timer = [System.Diagnostics.Stopwatch]::StartNew();
+        Write-Verbose "[UnixtoUnix] Encoding started at $([Datetime]::Now.Add($timer.Elapsed).ToString()) ..."
+        $lineLength = 45  # Specify the desired line length
+
+        for ($i = 0; $i -lt $ba.Length; $i += 3) {
+            $chunk = $ba[$i..($i + 2)]
+            # Encode the 3 bytes into 4 ASCII characters
+            $encoded += [string]::Join('', $(foreach ($b in $chunk) {
+                $b += 32
+                [char]($b + ($b -band 63))
+            }))
+        }
+
+        # Add line length character at the beginning of each line
+        $encoded = $encoded -split "(.{1,$lineLength})" | ForEach-Object {
+            $lineLengthChar = [char]($_.Length + 32)
+            "$lineLengthChar$_"
+        } -join "`r`n"
+
+        Write-Verbose "[UnixtoUnix] Encoding completed in $($Timer.Elapsed.Hours) hours, $($Timer.Elapsed.Minutes) minutes, $($Timer.Elapsed.Seconds) seconds, $($Timer.Elapsed.Milliseconds) milliseconds"
+        return $encoded
+    }
+    static [byte[]] Decode([string]$text) {
+        $decoded = $null
+        $Timer = [System.Diagnostics.Stopwatch]::StartNew();
+        Write-Verbose "[UnixtoUnix] Decoding started at $([Datetime]::Now.Add($timer.Elapsed).ToString()) ..."
+        $lines = $text -split "`r`n"
+
+        foreach ($line in $lines) {
+            $lineLength = [int][char]$line[0] - 32
+            $lineData = $line.Substring(1)
+
+            for ($i = 0; $i -lt $lineLength; $i += 4) {
+                $chunk = $lineData.Substring($i, 4)
+
+                $decoded += $chunk | ForEach-Object {
+                    [byte](($_[0] - 32) -bor ($_[1] - 32) -shl 6 -bor ($_[2] - 32) -shl 12 -bor ($_[3] - 32) -shl 18)
+                }
+            }
+        }
+        Write-Verbose "[UnixtoUnix] Decoding completed in $($Timer.Elapsed.Hours) hours, $($Timer.Elapsed.Minutes) minutes, $($Timer.Elapsed.Seconds) seconds, $($Timer.Elapsed.Milliseconds) milliseconds"
+        return $decoded
+    }
+}
+
 class EncodKit {
     static [EncodingName] $DefaultEncoding = 'Base85'
 
