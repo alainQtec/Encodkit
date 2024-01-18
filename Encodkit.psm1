@@ -243,26 +243,25 @@ class Base32 : EncodingBase {
 }
 
 class Base36 : EncodingBase {
-    Base36() {
-        $this.PsObject.properties.add([psscriptproperty]::new('alphabet', [scriptblock]::Create({ return "0123456789abcdefghijklmnopqrstuvwxyz" })))
-    }
-    [string] Encode([int]$decNum) {
+    static [string] $alphabet = "0123456789abcdefghijklmnopqrstuvwxyz"
+
+    static [string] Encode([int]$decNum) {
         $base36Num = ''
         do {
             $remainder = ($decNum % 36)
-            $char = $this.alphabet.substring($remainder, 1)
+            $char = [Base36]::alphabet.substring($remainder, 1)
             $base36Num = '{0}{1}' -f $char, $base36Num
             $decNum = ($decNum - $remainder) / 36
         } while ($decNum -gt 0)
         return $base36Num
     }
-    [long] Decode([string]$base36Num) {
+    static [long] Decode([int]$base36Num) {
         [ValidateNotNullOrEmpty()]$base36Num = $base36Num # Alphadecimal string
         $inputarray = $base36Num.tolower().tochararray()
         [array]::reverse($inputarray)
         [long]$decNum = 0; $pos = 0
         foreach ($c in $inputarray) {
-            $decNum += $this.alphabet.IndexOf($c) * [long][Math]::Pow(36, $pos)
+            $decNum += [Base36]::alphabet.IndexOf($c) * [long][Math]::Pow(36, $pos)
             $pos++
         }
         return $decNum
@@ -331,9 +330,20 @@ class Base58 : EncodingBase {
     }
 }
 
+# .SYNOPSIS
+#     Main Class. Encodes/decodes files. By default it uses base 85 encoding.
+# .EXAMPLE
+#     "some R4ndom text 123`n`t`n432`n!@#$%$ ..." | Out-File file1.txt
+#     $file = Get-Item file1.txt
+#     [EncodKit]::EncodeFile($file.FullName, $false, "file2.txt")
+#     [EncodKit]::DecodeFile("file2.txt")
+#     Now contents of file2.txt should be the same as those of file1.txt
 class EncodKit {
     static [EncodingName] $DefaultEncoding = 'Base85'
 
+    static [void] EncodeFile([string]$FilePath) {
+        [EncodKit]::EncodeFile($FilePath, $false, $FilePath);
+    }
     static [void] EncodeFile([string]$FilePath, [bool]$obfuscate, [string]$OutFile) {
         [EncodKit]::EncodeFile($FilePath, $obfuscate, $OutFile, [EncodKit]::DefaultEncoding)
     }
@@ -354,20 +364,14 @@ class EncodKit {
                 }
             }
         )
-        $encodedBytes = $(switch ($encoding.ToString()) {
-                'Base85' { [Base85]::GetBytes($encodedString) }
-                'Base58' { [Base58]::GetBytes($encodedString) }
-                'Base32' { [Base32]::GetBytes($encodedString) }
-                'Base16' { [Base16]::GetBytes($encodedString) }
-                Default {
-                    [Base85]::GetBytes($encodedString)
-                }
-            }
-        )
+        $encodedBytes = [EncodKit]::GetBytes($encodedString);
         if ($obfuscate) { [array]::Reverse($encodedBytes) }
         $streamWriter = [System.IO.FileStream]::new($OutFile, [System.IO.FileMode]::OpenOrCreate);
         [void]$streamWriter.Write($encodedBytes, 0, $encodedBytes.Length);
         [void]$streamWriter.Close()
+    }
+    static [void] DecodeFile([string]$FilePath) {
+        [EncodKit]::DecodeFile($FilePath, $false, $FilePath);
     }
     static [void] DecodeFile([string]$FilePath, [bool]$obfuscate, [string]$OutFile) {
         [EncodKit]::DecodeFile($FilePath, $obfuscate, $OutFile, [EncodKit]::DefaultEncoding)
@@ -379,8 +383,8 @@ class EncodKit {
         [void]$streamReader.Read($ba, 0, [int]$streamReader.Length);
         [void]$streamReader.Close();
         if ($deObfuscate) { [array]::Reverse($ba) }
-        $encodedString = [System.Text.Encoding]::ASCII.GetString($ba)
-        $decodedString = [System.Text.Encoding]::ASCII.GetString($(switch ($encoding.ToString()) {
+        $encodedString = [EncodKit]::GetString($ba)
+        $decodedString = [EncodKit]::GetString($(switch ($encoding.ToString()) {
                     'Base85' { [Base85]::Decode($encodedString) }
                     'Base58' { [Base58]::Decode($encodedString) }
                     'Base32' {}
@@ -394,6 +398,12 @@ class EncodKit {
         $streamWriter = [System.IO.FileStream]::new($OutFile, [System.IO.FileMode]::OpenOrCreate);
         $streamWriter.Write($decodedString, 0, $decodedString.Length);
         $streamWriter.Close();
+    }
+    static [byte[]] GetBytes([string]$text) {
+        return [EncodingBase]::new().GetBytes($text)
+    }
+    static [string] GetString([byte[]]$bytes) {
+        return [EncodingBase]::new().GetString($bytes)
     }
 }
 #endregion Classes
