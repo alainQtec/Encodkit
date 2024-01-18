@@ -41,16 +41,14 @@ class EncodingBase : System.Text.ASCIIEncoding {
     }
 }
 #region    Base85
-<#
-.SYNOPSIS
-    Base85 encoding
-.DESCRIPTION
-    A binary-to-text encoding scheme that uses 85 printable ASCII characters to represent binary data
-.EXAMPLE
-    $b = [System.Text.Encoding]::UTF8.GetBytes("Hello world")
-    [base85]::Encode($b)
-    [System.Text.Encoding]::UTF8.GetString([base85]::Decode("87cURD]j7BEbo7"))
-#>
+# .SYNOPSIS
+#     Base85 encoding
+# .DESCRIPTION
+#     A binary-to-text encoding scheme that uses 85 printable ASCII characters to represent binary data
+# .EXAMPLE
+#     $b = [System.Text.Encoding]::UTF8.GetBytes("Hello world")
+#     [base85]::Encode($b)
+#     [System.Text.Encoding]::UTF8.GetString([base85]::Decode("87cURD]j7BEbo7"))
 class Base85 : EncodingBase {
     static [String] $NON_A85_Pattern = "[^\x21-\x75]"
 
@@ -205,6 +203,13 @@ class Base85 : EncodingBase {
 class Base16 : EncodingBase {
     Base16() {}
 }
+
+# .SYNOPSIS
+#     Base 32
+# .EXAMPLE
+#     $e = [Base32]::Encode("Hello world again!")
+#     $d = [Base32]::GetString([Base32]::Decode($e))
+#     ($d -eq "Hello world again!") -should be $true
 class Base32 : EncodingBase {
     [int]$InByteSize = 8;
     [int]$OutByteSize = 5;
@@ -264,15 +269,15 @@ class Base36 : EncodingBase {
     }
 }
 
+
+# .SYNOPSIS
+#     Base 58
+# .EXAMPLE
+#     $e = [Base58]::Encode("Hello world!!")
+#     $d = [Base58]::GetString([Base58]::Decode($e))
+#     ($d -eq "Hello world!!") -should be $true
 class Base58 : EncodingBase {
-    Base58() {
-        if ($null -eq [Base58]::Bytes) {
-            [Base58]::PsObject.Properties.Add([psscriptproperty]::new('Bytes',
-                    { return [System.Text.Encoding]::ASCII.GetBytes('123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz') }
-                )
-            )
-        }
-    }
+    static [byte[]] $Bytes = [Base58]::GetBytes('123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz');
     static [string] Encode([string]$text) {
         return [Base58]::Encode([System.Text.Encoding]::ASCII.GetBytes($text))
     }
@@ -349,7 +354,16 @@ class EncodKit {
                 }
             }
         )
-        $encodedBytes = [System.Text.Encoding]::ASCII.GetBytes($encodedString);
+        $encodedBytes = $(switch ($encoding.ToString()) {
+                'Base85' { [Base85]::GetBytes($encodedString) }
+                'Base58' { [Base58]::GetBytes($encodedString) }
+                'Base32' { [Base32]::GetBytes($encodedString) }
+                'Base16' { [Base16]::GetBytes($encodedString) }
+                Default {
+                    [Base85]::GetBytes($encodedString)
+                }
+            }
+        )
         if ($obfuscate) { [array]::Reverse($encodedBytes) }
         $streamWriter = [System.IO.FileStream]::new($OutFile, [System.IO.FileMode]::OpenOrCreate);
         [void]$streamWriter.Write($encodedBytes, 0, $encodedBytes.Length);
@@ -383,6 +397,7 @@ class EncodKit {
     }
 }
 #endregion Classes
+
 
 $Private = Get-ChildItem ([IO.Path]::Combine($PSScriptRoot, 'Private')) -Filter "*.ps1" -ErrorAction SilentlyContinue
 $Public = Get-ChildItem ([IO.Path]::Combine($PSScriptRoot, 'Public')) -Filter "*.ps1" -ErrorAction SilentlyContinue
