@@ -49,6 +49,8 @@ class EncodingBase : System.Text.ASCIIEncoding {
 #     $b = [System.Text.Encoding]::UTF8.GetBytes("Hello world")
 #     [base85]::Encode($b)
 #     [System.Text.Encoding]::UTF8.GetString([base85]::Decode("87cURD]j7BEbo7"))
+# .EXAMPLE
+#     [Base85]::GetString([Base85]::Decode([Base85]::Encode('Hello world!'))) | Should -Be 'Hello world!'
 class Base85 : EncodingBase {
     static [String] $NON_A85_Pattern = "[^\x21-\x75]"
 
@@ -445,12 +447,15 @@ class EncodKit {
     static [void] EncodeFile([string]$FilePath) {
         [EncodKit]::EncodeFile($FilePath, $false, $FilePath);
     }
+    static [void] EncodeFile([string]$FilePath, [bool]$obfuscate) {
+        [EncodKit]::EncodeFile($FilePath, $obfuscate, $FilePath)
+    }
     static [void] EncodeFile([string]$FilePath, [bool]$obfuscate, [string]$OutFile) {
         [EncodKit]::EncodeFile($FilePath, $obfuscate, $OutFile, [EncodKit]::DefaultEncoding)
     }
     static [void] EncodeFile([string]$FilePath, [bool]$obfuscate, [string]$OutFile, [EncodingName]$encoding) {
-        [byte[]]$ba = $null;
-        [ValidateNotNullOrEmpty()][string]$FilePath = [IO.Path]::GetFullPath($FilePath)
+        [ValidateNotNullOrEmpty()][string]$FilePath = [EncodKit]::GetResolvedPath($FilePath);
+        [ValidateNotNullOrEmpty()][string]$OutFile = [EncodKit]::GetUnResolvedPath($OutFile);
         $streamReader = [System.IO.FileStream]::new($FilePath, [System.IO.FileMode]::Open)
         $ba = [byte[]]::New($streamReader.Length)
         [void]$streamReader.Read($ba, 0, [int]$streamReader.Length);
@@ -474,18 +479,19 @@ class EncodKit {
     static [void] DecodeFile([string]$FilePath) {
         [EncodKit]::DecodeFile($FilePath, $false, $FilePath);
     }
+    static [void] DecodeFile([string]$FilePath, [bool]$obfuscate) {
+        [EncodKit]::DecodeFile($FilePath, $obfuscate, $FilePath)
+    }
     static [void] DecodeFile([string]$FilePath, [bool]$obfuscate, [string]$OutFile) {
         [EncodKit]::DecodeFile($FilePath, $obfuscate, $OutFile, [EncodKit]::DefaultEncoding)
     }
     static [void] DecodeFile([string]$FilePath, [bool]$deObfuscate, [string]$OutFile, [EncodingName]$encoding) {
-        [byte[]]$ba = $null;
-        [ValidateNotNullOrEmpty()][string]$FilePath = [IO.Path]::GetFullPath($FilePath);
-        $streamReader = [System.IO.FileStream]::new($FilePath, [System.IO.FileMode]::Open);
-        [void]$streamReader.Read($ba, 0, [int]$streamReader.Length);
-        [void]$streamReader.Close();
+        [ValidateNotNullOrEmpty()][string]$FilePath = [EncodKit]::GetResolvedPath($FilePath);
+        [ValidateNotNullOrEmpty()][string]$OutFile = [EncodKit]::GetUnResolvedPath($OutFile);
+        $ba = [byte[]][IO.FILE]::ReadAllBytes($FilePath)
         if ($deObfuscate) { [array]::Reverse($ba) }
         $encodedString = [EncodKit]::GetString($ba)
-        $decodedString = [EncodKit]::GetString($(switch ($encoding.ToString()) {
+        [void][IO.FILE]::WriteAllBytes($OutFile, $(switch ($encoding.ToString()) {
                     'Base85' { [Base85]::Decode($encodedString) }
                     'Base58' { [Base58]::Decode($encodedString) }
                     'Base32' {}
@@ -496,9 +502,24 @@ class EncodKit {
                 }
             )
         )
-        $streamWriter = [System.IO.FileStream]::new($OutFile, [System.IO.FileMode]::OpenOrCreate);
-        $streamWriter.Write($decodedString, 0, $decodedString.Length);
-        $streamWriter.Close();
+    }
+    static [string] GetResolvedPath([string]$Path) {
+        return [EncodKit]::GetResolvedPath($((Get-Variable ExecutionContext).Value.SessionState), $Path)
+    }
+    static [string] GetResolvedPath([System.Management.Automation.SessionState]$session, [string]$Path) {
+        $paths = $session.Path.GetResolvedPSPathFromPSPath($Path);
+        if ($paths.Count -gt 1) {
+            throw [System.IO.IOException]::new([string]::Format([cultureinfo]::InvariantCulture, "Path {0} is ambiguous", $Path))
+        } elseif ($paths.Count -lt 1) {
+            throw [System.IO.IOException]::new([string]::Format([cultureinfo]::InvariantCulture, "Path {0} not Found", $Path))
+        }
+        return $paths[0].Path
+    }
+    static [string] GetUnResolvedPath([string]$Path) {
+        return [EncodKit]::GetUnResolvedPath($((Get-Variable ExecutionContext).Value.SessionState), $Path)
+    }
+    static [string] GetUnResolvedPath([System.Management.Automation.SessionState]$session, [string]$Path) {
+        return $session.Path.GetUnresolvedProviderPathFromPSPath($Path)
     }
     static [byte[]] GetBytes([string]$text) {
         return [EncodingBase]::new().GetBytes($text)
